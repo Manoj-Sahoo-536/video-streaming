@@ -9,6 +9,7 @@ import Register from './pages/Register';
 import Watch from './pages/Watch';
 import Upload from './pages/Upload';
 import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
 
 const getStoredUser = () => {
   try {
@@ -45,6 +46,7 @@ function AdminRoute({ children, user }) {
 
 function App() {
   const [currentUser, setCurrentUser] = useState(getStoredUser());
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -71,12 +73,20 @@ function App() {
     hydrateProfile();
   }, [location.pathname]);
 
+  // Auth pages should not show the sidebar
+  const isAuthPage = ['/login', '/register'].includes(location.pathname);
+
   return (
-    <div className="app-shell">
-      <Navbar />
-      <main className="main-layout">
-        <Sidebar user={currentUser} />
-        <section className="content-area">
+    <div className={`app-shell ${sidebarMinimized ? 'sidebar-minimized' : ''}`}>
+      <Navbar onToggleSidebar={() => setSidebarMinimized((p) => !p)} />
+
+      <div className="main-layout">
+        {!isAuthPage && <Sidebar user={currentUser} />}
+
+        <main
+          className="content-area"
+          style={isAuthPage ? { marginLeft: 0, padding: 0 } : {}}
+        >
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
@@ -91,6 +101,14 @@ function App() {
               }
             />
             <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/dashboard"
               element={
                 <AdminRoute user={currentUser}>
@@ -99,8 +117,8 @@ function App() {
               }
             />
           </Routes>
-        </section>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

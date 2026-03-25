@@ -1,31 +1,60 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import VideoCard from '../components/VideoCard';
+
+const CATEGORIES = ['All', 'Music', 'Gaming', 'Education', 'Technology', 'Sports', 'Comedy', 'News', 'Travel', 'Food', 'Fitness'];
+
+function SkeletonCard() {
+  return (
+    <div className="skeleton-card" aria-hidden="true">
+      <div className="skeleton skeleton-thumb" />
+      <div style={{ padding: '14px 16px' }}>
+        <div className="skeleton skeleton-text" style={{ width: '80%' }} />
+        <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+        <div className="skeleton skeleton-text-sm skeleton" style={{ width: '40%' }} />
+      </div>
+    </div>
+  );
+}
 
 function Home() {
   const [videos, setVideos] = useState([]);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const location = useLocation();
+
+  // Sync category from sidebar links (?cat=Gaming)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cat = params.get('cat');
+    const q = params.get('q');
+    if (cat) setCategoryFilter(cat);
+    if (q) setSearch(q);
+  }, [location.search]);
 
   useEffect(() => {
     const fetchVideos = async () => {
+      setLoading(true);
+      setError('');
       try {
         const { data } = await api.get('/videos');
-        setVideos(data);
-      } catch (_error) {
+        setVideos(Array.isArray(data) ? data : []);
+      } catch (_err) {
+        setError('Failed to load videos. Please try again later.');
         setVideos([]);
       } finally {
         setLoading(false);
       }
     };
-
     fetchVideos();
   }, []);
 
   const filteredVideos = useMemo(() => {
     return videos.filter((video) => {
-      const matchesSearch = `${video.title} ${video.category}`
+      const matchesSearch = `${video.title || ''} ${video.category || ''} ${video.uploadedBy?.name || ''}`
         .toLowerCase()
         .includes(search.toLowerCase().trim());
       const matchesCategory = categoryFilter === 'All' || (video.category || 'General') === categoryFilter;
@@ -33,87 +62,66 @@ function Home() {
     });
   }, [videos, search, categoryFilter]);
 
-  const categories = useMemo(() => {
-    const values = videos.map((video) => video.category || 'General');
-    return ['All', ...new Set(values)];
+  const dynamicCategories = useMemo(() => {
+    const cats = new Set(videos.map((v) => v.category || 'General'));
+    return [...CATEGORIES.filter((c) => c === 'All' || cats.has(c)), ...[...cats].filter((c) => !CATEGORIES.includes(c))];
   }, [videos]);
 
   return (
-    <div className="home-page">
-      <div className="home-hero card border-0 shadow-sm mb-3">
-        <div className="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
-          <div>
-            <h4 className="mb-1">Discover Videos</h4>
-            <p className="text-muted mb-0">Browse, search, and watch content from your library.</p>
-          </div>
-          <div className="d-flex gap-2">
-            <span className="badge text-bg-primary px-3 py-2">Total: {videos.length}</span>
-            <span className="badge text-bg-light border px-3 py-2">Showing: {filteredVideos.length}</span>
-          </div>
-        </div>
+    <main className="page-content" role="main" style={{ padding: '24px 32px' }}>
+      {/* Category Tags Row */}
+      <div className="home-category-tags" role="group" aria-label="Category filters">
+        {dynamicCategories.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`home-category-tag ${categoryFilter === cat ? 'active' : ''}`}
+            onClick={() => setCategoryFilter(cat)}
+            aria-pressed={categoryFilter === cat}
+            aria-label={`Filter by ${cat}`}
+          >
+            {cat}
+          </button>
+        ))}
       </div>
 
-      <div className="card border-0 shadow-sm mb-3">
-        <div className="card-body">
-          <div className="row g-2 align-items-center">
-            <div className="col-lg-5">
-              <input
-                className="form-control"
-                placeholder="Search by title or category"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <div className="col-lg-7">
-              <div className="d-flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <button
-                    key={category}
-                    type="button"
-                    className={`btn btn-sm ${categoryFilter === category ? 'btn-primary' : 'btn-outline-secondary'}`}
-                    onClick={() => setCategoryFilter(category)}
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+      {/* Error */}
+      {error && (
+        <div className="sv-alert sv-alert-danger animate-fade-up" role="alert" style={{ marginBottom: 24 }}>
+          <span aria-hidden="true">❗</span> {error}
         </div>
-      </div>
+      )}
 
+      {/* Video Grid */}
       {loading ? (
-        <div className="row g-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div className="col-sm-6 col-lg-4" key={`loading-${index}`}>
-              <div className="video-card h-100 placeholder-glow p-3">
-                <div className="video-thumb rounded placeholder" />
-                <div className="mt-3">
-                  <span className="placeholder col-8 d-block mb-2" />
-                  <span className="placeholder col-5 d-block mb-2" />
-                  <span className="placeholder col-4 d-block" />
-                </div>
-              </div>
-            </div>
+        <div className="videos-grid" aria-label="Loading videos" aria-busy="true">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <SkeletonCard key={`skel-${i}`} />
           ))}
         </div>
       ) : filteredVideos.length === 0 ? (
-        <div className="card border-0 shadow-sm">
-          <div className="card-body text-center py-5">
-            <h6 className="mb-2">No videos found</h6>
-            <p className="text-muted mb-0">Try changing search text or selecting another category.</p>
-          </div>
+        <div className="empty-state animate-scale-in" role="status" aria-live="polite" style={{ marginTop: 40 }}>
+          <div className="empty-state-icon" aria-hidden="true">🎬</div>
+          <p className="empty-state-title">No videos found</p>
+          <p className="empty-state-sub">
+            {search ? `No results for "${search}". Try different keywords.` : 'No videos available yet.'}
+          </p>
         </div>
       ) : (
-        <div className="row g-3">
-          {filteredVideos.map((video) => (
-            <div className="col-sm-6 col-lg-4" key={video._id}>
-              <VideoCard video={video} />
-            </div>
-          ))}
-        </div>
+        <section aria-label={`${filteredVideos.length} video results`}>
+          <div className="videos-grid animate-fade-up">
+            {filteredVideos.map((video, i) => (
+              <div
+                key={video._id}
+                className={`stagger-${Math.min(i + 1, 4)}`}
+              >
+                <VideoCard video={video} />
+              </div>
+            ))}
+          </div>
+        </section>
       )}
-    </div>
+    </main>
   );
 }
 

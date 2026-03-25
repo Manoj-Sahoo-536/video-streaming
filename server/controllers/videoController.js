@@ -1,12 +1,12 @@
 const cloudinary = require('../config/cloudinary');
 const { supabaseAdminClient } = require('../config/supabase');
 
-const uploadToCloudinary = (buffer) =>
+const uploadToCloudinary = (buffer, resourceType = 'video') =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: 'video-streaming/videos',
-        resource_type: 'video'
+        resource_type: resourceType
       },
       (error, result) => {
         if (error) {
@@ -40,9 +40,15 @@ const mapVideo = (video) => ({
 const uploadVideo = async (req, res) => {
   try {
     const { title, description, category, videoUrl, thumbnailUrl, duration } = req.body;
-    const hasFile = Boolean(req.file?.buffer);
+    
+    // Express 'multer' with .fields() puts it in req.files
+    const hasVideoFile = Boolean(req.files?.['video']?.[0]?.buffer);
+    const hasThumbnailFile = Boolean(req.files?.['thumbnail']?.[0]?.buffer);
 
-    if (!title || (!videoUrl && !hasFile)) {
+    // Fallback if someone used .single() somehow (backwards compat during transition)
+    const hasSingleFile = Boolean(req.file?.buffer); 
+
+    if (!title || (!videoUrl && !hasVideoFile && !hasSingleFile)) {
       return res.status(400).json({ message: 'Title and video file/url are required' });
     }
 
@@ -51,17 +57,29 @@ const uploadVideo = async (req, res) => {
     let finalDuration = Number(duration || 0);
     let cloudinaryVideoPublicId = null;
 
-    if (hasFile) {
-      const uploadedVideo = await uploadToCloudinary(req.file.buffer);
+    // Handle video buffer
+    const videoBuffer = hasVideoFile ? req.files['video'][0].buffer : (hasSingleFile ? req.file.buffer : null);
+
+    if (videoBuffer) {
+      const uploadedVideo = await uploadToCloudinary(videoBuffer, 'video');
       finalVideoUrl = uploadedVideo.secure_url;
       finalDuration = Number(uploadedVideo.duration || finalDuration || 0);
       cloudinaryVideoPublicId = uploadedVideo.public_id;
 
-      finalThumbnailUrl = cloudinary.url(uploadedVideo.public_id, {
-        resource_type: 'video',
-        format: 'jpg',
-        transformation: [{ width: 640, height: 360, crop: 'fill' }]
-      });
+      // Only auto-generate if user didn't provide a custom url and didn't provide a custom file
+      if (!finalThumbnailUrl && !hasThumbnailFile) {
+        finalThumbnailUrl = cloudinary.url(uploadedVideo.public_id, {
+          resource_type: 'video',
+          format: 'jpg',
+          transformation: [{ width: 640, height: 360, crop: 'fill' }]
+        });
+      }
+    }
+
+    // Handle thumbnail buffer
+    if (hasThumbnailFile) {
+      const uploadedThumb = await uploadToCloudinary(req.files['thumbnail'][0].buffer, 'image');
+      finalThumbnailUrl = uploadedThumb.secure_url;
     }
 
     const { data: createdVideo, error } = await supabaseAdminClient
@@ -141,6 +159,68 @@ const getVideoById = async (req, res) => {
     }
 
     return res.status(200).json(mapVideo(video));
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const updateVideo = async (req, res) => {
+  try {
+    const { title, description, category, thumbnailUrl } = req.body;
+
+    // Fetch video to check ownership
+    const { data: video, error: readError } = await supabaseAdminClient
+      .from('videos')
+      .select('id, uploaded_by')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (readError) return res.status(500).json({ message: readError.message });
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    if (video.uploaded_by !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
+
+    // Build only the fields that were sent
+    const patch = { updated_at: new Date().toISOString() };
+    if (title !== undefined) patch.title = title;
+    if (description !== undefined) patch.description = description;
+    if (category !== undefined) patch.category = category;
+    
+    // Check if new thumbnail logic
+    if (req.file) {
+      const uploadedThumb = await uploadToCloudinary(req.file.buffer, 'image');
+      patch.thumbnail_url = uploadedThumb.secure_url;
+    } else if (thumbnailUrl !== undefined) {
+      patch.thumbnail_url = thumbnailUrl;
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdminClient
+      .from('videos')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select('*, users:uploaded_by(name)')
+      .single();
+
+    if (updateError) return res.status(500).json({ message: updateError.message });
+
+    return res.status(200).json(mapVideo(updated));
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const getUserVideos = async (req, res) => {
+  try {
+    const { data: videos, error } = await supabaseAdminClient
+      .from('videos')
+      .select('*, users:uploaded_by(name)')
+      .eq('uploaded_by', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ message: error.message });
+    return res.status(200).json((videos || []).map(mapVideo));
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -349,14 +429,46 @@ const addWatchHistory = async (req, res) => {
   }
 };
 
+const likeVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body; // 'like' or 'unlike'
+
+    const { data: video, error: readError } = await supabaseAdminClient
+      .from('videos')
+      .select('likes')
+      .eq('id', id)
+      .single();
+
+    if (readError) return res.status(500).json({ message: readError.message });
+
+    const currentLikes = video.likes || 0;
+    const newLikes = action === 'like' ? currentLikes + 1 : Math.max(0, currentLikes - 1);
+
+    const { error: updateError } = await supabaseAdminClient
+      .from('videos')
+      .update({ likes: newLikes })
+      .eq('id', id);
+
+    if (updateError) return res.status(500).json({ message: updateError.message });
+
+    return res.status(200).json({ message: 'Success', likes: newLikes });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   uploadVideo,
   getVideos,
   getVideoById,
+  updateVideo,
+  getUserVideos,
   deleteVideo,
   streamVideo,
   getRecommendedVideos,
   postComment,
   getCommentsByVideo,
-  addWatchHistory
+  addWatchHistory,
+  likeVideo
 };

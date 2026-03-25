@@ -4,12 +4,15 @@ const {
   uploadVideo,
   getVideos,
   getVideoById,
+  updateVideo,
+  getUserVideos,
   deleteVideo,
   streamVideo,
   getRecommendedVideos,
   postComment,
   getCommentsByVideo,
-  addWatchHistory
+  addWatchHistory,
+  likeVideo
 } = require('../controllers/videoController');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
@@ -21,9 +24,23 @@ router.get('/recommended/:userId', getRecommendedVideos);
 router.post('/comments', authMiddleware, postComment);
 router.get('/comments/:videoId', getCommentsByVideo);
 router.post('/history', authMiddleware, addWatchHistory);
-router.post('/upload', authMiddleware, upload.single('video'), uploadVideo);
+router.post(
+  '/upload',
+  authMiddleware,
+  upload.fields([
+    { name: 'video', maxCount: 1 },
+    { name: 'thumbnail', maxCount: 1 }
+  ]),
+  uploadVideo
+);
+
+// Fixed: Put /my-videos BEFORE /:id so it's not caught as an invalid UUID
+router.get('/my-videos', authMiddleware, getUserVideos);
+
 router.get('/', getVideos);
 router.get('/:id', getVideoById);
+router.patch('/:id', authMiddleware, upload.single('thumbnail'), updateVideo);
+router.post('/:id/like', authMiddleware, likeVideo);
 router.delete('/:id', authMiddleware, deleteVideo);
 
 module.exports = router;
