@@ -31,8 +31,8 @@ function Home() {
     const params = new URLSearchParams(location.search);
     const cat = params.get('cat');
     const q = params.get('q');
-    if (cat) setCategoryFilter(cat);
-    if (q) setSearch(q);
+    setCategoryFilter(cat || 'All');
+    setSearch(q || '');
   }, [location.search]);
 
   useEffect(() => {

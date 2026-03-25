@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-function VideoPlayer({ streamUrl, thumbnailUrl }) {
+function VideoPlayer({ streamUrl, thumbnailUrl, onPlayStart }) {
   const source = useMemo(() => streamUrl || '', [streamUrl]);
 
   if (!source) {
@@ -24,6 +24,7 @@ function VideoPlayer({ streamUrl, thumbnailUrl }) {
         controls
         poster={thumbnailUrl}
         preload="metadata"
+        onPlay={onPlayStart}
         aria-label="Video player"
         style={{
           width: '100%',

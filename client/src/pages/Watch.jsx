@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../api/axios';
 import VideoPlayer from '../components/VideoPlayer';
@@ -20,25 +20,58 @@ function Watch() {
   const [commentLoading, setCommentLoading] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likes, setLikes] = useState(0);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [likeError, setLikeError] = useState('');
   const [descExpanded, setDescExpanded] = useState(false);
   const [relatedVideos, setRelatedVideos] = useState([]);
+  const viewTrackedRef = useRef(false);
 
   const token = localStorage.getItem('token');
+
+  const getOrCreateViewerSessionId = () => {
+    const key = 'viewer_session_id';
+    const existing = localStorage.getItem(key);
+    if (existing && existing.trim()) return existing;
+
+    const generated = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    localStorage.setItem(key, generated);
+    return generated;
+  };
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      viewTrackedRef.current = false;
       try {
-        const [videoRes, streamRes, commentsRes] = await Promise.all([
-          api.get(`/videos/${id}`),
-          api.get(`/videos/stream/${id}`),
-          api.get(`/videos/comments/${id}`),
-        ]);
+        const videoRes = await api.get(`/videos/${id}`);
 
         setVideo(videoRes.data);
-        setStream(streamRes.data);
-        setComments(commentsRes.data);
-        setLikes(videoRes.data?.likes || 0);
+        setStream({
+          streamUrl: videoRes.data?.videoUrl || '',
+          thumbnailUrl: videoRes.data?.thumbnailUrl || ''
+        });
+        setLikes(Number(videoRes.data?.likes || 0));
+        setComments([]);
+        setLiked(false);
+
+        try {
+          const commentsRes = await api.get(`/videos/comments/${id}`);
+          setComments(Array.isArray(commentsRes.data) ? commentsRes.data : []);
+        } catch (_) {
+          setComments([]);
+        }
+
+        if (token) {
+          try {
+            const likeStatusRes = await api.get(`/videos/${id}/like-status`);
+            if (likeStatusRes?.data) {
+              setLiked(Boolean(likeStatusRes.data.liked));
+              setLikes(Number(likeStatusRes.data.likes || videoRes.data?.likes || 0));
+            }
+          } catch (_) {
+            setLiked(false);
+          }
+        }
 
         // Fetch related videos
         const allRes = await api.get('/videos');
@@ -72,18 +105,61 @@ function Watch() {
   };
 
   const handleLike = async () => {
-    if (!token) return;
-    
-    const action = liked ? 'unlike' : 'like';
-    setLiked((prev) => !prev);
-    setLikes((prev) => liked ? prev - 1 : prev + 1);
-    
+    if (!token || likeLoading) return;
+
+    const previousLiked = liked;
+    const previousLikes = likes;
+    const nextLiked = !previousLiked;
+    const nextLikes = Math.max(0, previousLikes + (nextLiked ? 1 : -1));
+    const action = nextLiked ? 'like' : 'unlike';
+
+    setLiked(nextLiked);
+    setLikes(nextLikes);
+    setLikeLoading(true);
+    setLikeError('');
+
     try {
-      await api.post(`/videos/${id}/like`, { action });
+      const { data } = await api.post(`/videos/${id}/like`, { action });
+      if (typeof data?.liked === 'boolean') {
+        setLiked(Boolean(data.liked));
+      }
+      if (typeof data?.likes === 'number') {
+        setLikes(Number(data.likes));
+      }
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Unable to update like. Please try again.';
+      setLikeError(message);
+      setLiked(previousLiked);
+      setLikes(previousLikes);
+
+      if (token) {
+        try {
+          const statusRes = await api.get(`/videos/${id}/like-status`);
+          setLiked(Boolean(statusRes?.data?.liked));
+          setLikes(Number(statusRes?.data?.likes || 0));
+        } catch (_) {
+          // no-op
+        }
+      }
+    } finally {
+      setLikeLoading(false);
+    }
+  };
+
+  const trackViewOnPlay = async () => {
+    if (viewTrackedRef.current) return;
+    viewTrackedRef.current = true;
+
+    try {
+      const { data } = await api.post(`/videos/${id}/view`, {
+        sessionId: getOrCreateViewerSessionId()
+      });
+
+      if (typeof data?.views === 'number') {
+        setVideo((prev) => (prev ? { ...prev, views: data.views } : prev));
+      }
     } catch (_) {
-      // revert on failure
-      setLiked((prev) => !prev);
-      setLikes((prev) => liked ? prev + 1 : prev - 1);
+      // silently fail
     }
   };
 
@@ -122,7 +198,11 @@ function Watch() {
         {/* LEFT COLUMN */}
         <div>
           {/* Player */}
-          <VideoPlayer streamUrl={stream.streamUrl} thumbnailUrl={stream.thumbnailUrl} />
+          <VideoPlayer
+            streamUrl={stream.streamUrl}
+            thumbnailUrl={stream.thumbnailUrl}
+            onPlayStart={trackViewOnPlay}
+          />
 
           {/* Video Info */}
           <div className="watch-info">
@@ -149,12 +229,17 @@ function Watch() {
                   onClick={handleLike}
                   aria-pressed={liked}
                   aria-label={liked ? 'Unlike video' : 'Like video'}
-                  disabled={!token}
+                  disabled={!token || likeLoading}
                   title={!token ? 'Login to like' : ''}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
                   <span>{likes > 0 ? likes : 'Like'}</span>
                 </button>
+                {likeError ? (
+                  <span style={{ color: 'var(--danger)', fontSize: 12, marginLeft: 8 }} role="status" aria-live="polite">
+                    {likeError}
+                  </span>
+                ) : null}
                 <button
                   id="share-btn"
                   className="watch-action-pill"

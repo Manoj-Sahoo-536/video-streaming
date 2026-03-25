@@ -8,11 +8,13 @@ const {
   getUserVideos,
   deleteVideo,
   streamVideo,
+  trackVideoView,
   getRecommendedVideos,
   postComment,
   getCommentsByVideo,
   addWatchHistory,
-  likeVideo
+  likeVideo,
+  getVideoLikeStatus
 } = require('../controllers/videoController');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
@@ -20,6 +22,7 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 250 * 1024 * 1024 } });
 
 router.get('/stream/:id', streamVideo);
+router.post('/:id/view', trackVideoView);
 router.get('/recommended/:userId', getRecommendedVideos);
 router.post('/comments', authMiddleware, postComment);
 router.get('/comments/:videoId', getCommentsByVideo);
@@ -36,6 +39,7 @@ router.post(
 
 // Fixed: Put /my-videos BEFORE /:id so it's not caught as an invalid UUID
 router.get('/my-videos', authMiddleware, getUserVideos);
+router.get('/:id/like-status', authMiddleware, getVideoLikeStatus);
 
 router.get('/', getVideos);
 router.get('/:id', getVideoById);

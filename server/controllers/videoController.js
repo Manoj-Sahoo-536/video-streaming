@@ -37,6 +37,22 @@ const mapVideo = (video) => ({
   createdAt: video.created_at
 });
 
+const getBearerToken = (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  return authHeader.split(' ')[1];
+};
+
+const getOptionalUserId = async (req) => {
+  const token = getBearerToken(req);
+  if (!token) return null;
+
+  const { data, error } = await supabaseAdminClient.auth.getUser(token);
+  if (error || !data?.user?.id) return null;
+
+  return data.user.id;
+};
+
 const uploadVideo = async (req, res) => {
   try {
     const { title, description, category, videoUrl, thumbnailUrl, duration } = req.body;
@@ -281,12 +297,129 @@ const streamVideo = async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    await supabaseAdminClient
-      .from('videos')
-      .update({ views: Number(video.views || 0) + 1, updated_at: new Date().toISOString() })
-      .eq('id', req.params.id);
-
     return res.status(200).json({ streamUrl: video.video_url, thumbnailUrl: video.thumbnail_url });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const trackVideoView = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rawSessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+    const sessionId = rawSessionId.trim().slice(0, 128);
+    const userId = await getOptionalUserId(req);
+
+    const { data: video, error: videoError } = await supabaseAdminClient
+      .from('videos')
+      .select('id, views')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (videoError) {
+      return res.status(500).json({ message: videoError.message });
+    }
+
+    if (!video) {
+      return res.status(404).json({ message: 'Video not found' });
+    }
+
+    if (!userId && !sessionId) {
+      return res.status(400).json({ message: 'sessionId is required for guest views' });
+    }
+
+    let alreadyCounted = false;
+    let currentViews = Number(video.views || 0);
+
+    if (userId) {
+      const { data: existing, error: existingError } = await supabaseAdminClient
+        .from('video_views')
+        .select('id')
+        .eq('video_id', id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existingError) {
+        return res.status(500).json({ message: existingError.message });
+      }
+
+      if (existing) {
+        alreadyCounted = true;
+      } else {
+        const { error: insertError } = await supabaseAdminClient
+          .from('video_views')
+          .insert({ video_id: id, user_id: userId });
+
+        if (insertError) {
+          return res.status(500).json({ message: insertError.message });
+        }
+
+        const { data: watched, error: watchedError } = await supabaseAdminClient
+          .from('watch_history')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('video_id', id)
+          .maybeSingle();
+
+        if (watchedError) {
+          return res.status(500).json({ message: watchedError.message });
+        }
+
+        if (!watched) {
+          const { error: historyInsertError } = await supabaseAdminClient
+            .from('watch_history')
+            .insert({ user_id: userId, video_id: id });
+
+          if (historyInsertError) {
+            return res.status(500).json({ message: historyInsertError.message });
+          }
+        }
+
+        currentViews += 1;
+      }
+    } else {
+      const { data: existing, error: existingError } = await supabaseAdminClient
+        .from('video_views')
+        .select('id')
+        .eq('video_id', id)
+        .eq('session_id', sessionId)
+        .maybeSingle();
+
+      if (existingError) {
+        return res.status(500).json({ message: existingError.message });
+      }
+
+      if (existing) {
+        alreadyCounted = true;
+      } else {
+        const { error: insertError } = await supabaseAdminClient
+          .from('video_views')
+          .insert({ video_id: id, session_id: sessionId });
+
+        if (insertError) {
+          return res.status(500).json({ message: insertError.message });
+        }
+
+        currentViews += 1;
+      }
+    }
+
+    if (!alreadyCounted) {
+      const { error: updateError } = await supabaseAdminClient
+        .from('videos')
+        .update({ views: currentViews, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (updateError) {
+        return res.status(500).json({ message: updateError.message });
+      }
+    }
+
+    return res.status(200).json({
+      message: alreadyCounted ? 'View already counted' : 'View counted',
+      counted: !alreadyCounted,
+      views: currentViews
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -434,25 +567,96 @@ const likeVideo = async (req, res) => {
     const { id } = req.params;
     const { action } = req.body; // 'like' or 'unlike'
 
+    if (!['like', 'unlike'].includes(action)) {
+      return res.status(400).json({ message: 'action must be like or unlike' });
+    }
+
     const { data: video, error: readError } = await supabaseAdminClient
       .from('videos')
-      .select('likes')
+      .select('id, likes')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (readError) return res.status(500).json({ message: readError.message });
+    if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    const currentLikes = video.likes || 0;
-    const newLikes = action === 'like' ? currentLikes + 1 : Math.max(0, currentLikes - 1);
+    let liked = false;
+    let likes = Number(video.likes || 0);
+
+    if (action === 'like') {
+      const { error: insertError } = await supabaseAdminClient
+        .from('video_likes')
+        .insert({ video_id: id, user_id: req.user.id });
+
+      if (insertError) {
+        const isDuplicate = insertError.code === '23505' || String(insertError.message || '').toLowerCase().includes('duplicate key');
+        if (!isDuplicate) {
+          return res.status(500).json({ message: insertError.message });
+        }
+      } else {
+        likes += 1;
+      }
+
+      liked = true;
+    } else {
+      const { data: deletedRows, error: deleteError } = await supabaseAdminClient
+        .from('video_likes')
+        .delete()
+        .eq('video_id', id)
+        .eq('user_id', req.user.id)
+        .select('id');
+
+      if (deleteError) {
+        return res.status(500).json({ message: deleteError.message });
+      }
+
+      if (Array.isArray(deletedRows) && deletedRows.length > 0) {
+        likes = Math.max(0, likes - 1);
+      }
+
+      liked = false;
+    }
 
     const { error: updateError } = await supabaseAdminClient
       .from('videos')
-      .update({ likes: newLikes })
+      .update({ likes, updated_at: new Date().toISOString() })
       .eq('id', id);
 
-    if (updateError) return res.status(500).json({ message: updateError.message });
+    if (updateError) {
+      return res.status(500).json({ message: updateError.message });
+    }
 
-    return res.status(200).json({ message: 'Success', likes: newLikes });
+    return res.status(200).json({ message: 'Success', likes, liked });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const getVideoLikeStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: video, error: videoError } = await supabaseAdminClient
+      .from('videos')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (videoError) return res.status(500).json({ message: videoError.message });
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    const { data: existingLike, error: likeError } = await supabaseAdminClient
+      .from('video_likes')
+      .select('id')
+      .eq('video_id', id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (likeError) {
+      return res.status(500).json({ message: likeError.message });
+    }
+
+    return res.status(200).json({ liked: Boolean(existingLike), likes: Number(video.likes || 0) });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -466,9 +670,11 @@ module.exports = {
   getUserVideos,
   deleteVideo,
   streamVideo,
+  trackVideoView,
   getRecommendedVideos,
   postComment,
   getCommentsByVideo,
   addWatchHistory,
-  likeVideo
+  likeVideo,
+  getVideoLikeStatus
 };

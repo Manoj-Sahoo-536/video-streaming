@@ -43,17 +43,40 @@ create table if not exists public.watch_history (
   watched_at timestamptz not null default now()
 );
 
+create table if not exists public.video_likes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  video_id uuid not null references public.videos(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, video_id)
+);
+
+create table if not exists public.video_views (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.users(id) on delete cascade,
+  session_id text,
+  video_id uuid not null references public.videos(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint video_views_viewer_check check (user_id is not null or (session_id is not null and length(trim(session_id)) > 0))
+);
+
 create index if not exists idx_videos_uploaded_by on public.videos(uploaded_by);
 create index if not exists idx_videos_category on public.videos(category);
 create index if not exists idx_videos_created_at on public.videos(created_at desc);
 create index if not exists idx_comments_video_id on public.comments(video_id);
 create index if not exists idx_comments_created_at on public.comments(created_at desc);
 create index if not exists idx_history_user_watched on public.watch_history(user_id, watched_at desc);
+create index if not exists idx_video_likes_video on public.video_likes(video_id);
+create index if not exists idx_video_views_video on public.video_views(video_id);
+create unique index if not exists idx_video_views_video_user_unique on public.video_views(video_id, user_id) where user_id is not null;
+create unique index if not exists idx_video_views_video_session_unique on public.video_views(video_id, session_id) where session_id is not null;
 
 alter table public.users enable row level security;
 alter table public.videos enable row level security;
 alter table public.comments enable row level security;
 alter table public.watch_history enable row level security;
+alter table public.video_likes enable row level security;
+alter table public.video_views enable row level security;
 
 drop policy if exists "users_select_own" on public.users;
 create policy "users_select_own" on public.users
@@ -102,3 +125,27 @@ for select using (auth.uid() = user_id);
 drop policy if exists "history_insert_own" on public.watch_history;
 create policy "history_insert_own" on public.watch_history
 for insert with check (auth.uid() = user_id);
+
+drop policy if exists "video_likes_read_all" on public.video_likes;
+create policy "video_likes_read_all" on public.video_likes
+for select using (true);
+
+drop policy if exists "video_likes_insert_own" on public.video_likes;
+create policy "video_likes_insert_own" on public.video_likes
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists "video_likes_delete_own" on public.video_likes;
+create policy "video_likes_delete_own" on public.video_likes
+for delete using (auth.uid() = user_id);
+
+drop policy if exists "video_views_read_all" on public.video_views;
+create policy "video_views_read_all" on public.video_views
+for select using (true);
+
+drop policy if exists "video_views_insert_authenticated" on public.video_views;
+create policy "video_views_insert_authenticated" on public.video_views
+for insert with check (
+  (auth.uid() = user_id)
+  or
+  (auth.uid() is null and user_id is null and session_id is not null)
+);

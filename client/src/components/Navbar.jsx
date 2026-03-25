@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 function Navbar({ onToggleSidebar }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const token = localStorage.getItem('token');
   const [navSearch, setNavSearch] = useState('');
 
@@ -17,8 +18,40 @@ function Navbar({ onToggleSidebar }) {
 
   const handleNavSearch = (e) => {
     e.preventDefault();
-    navigate(`/?q=${encodeURIComponent(navSearch)}`);
+    const query = navSearch.trim();
+    const params = new URLSearchParams(location.search);
+    if (query) params.set('q', query);
+    else params.delete('q');
+
+    const search = params.toString();
+    navigate({ pathname: '/', search: search ? `?${search}` : '' });
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('q') || '';
+    setNavSearch(q);
+  }, [location.search]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const query = navSearch.trim();
+      const params = new URLSearchParams(location.search);
+      const currentQ = params.get('q') || '';
+
+      if (query === currentQ) {
+        return;
+      }
+
+      if (query) params.set('q', query);
+      else params.delete('q');
+
+      const search = params.toString();
+      navigate({ pathname: '/', search: search ? `?${search}` : '' }, { replace: true });
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [navSearch, location.search, navigate]);
 
   const initials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
