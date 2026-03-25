@@ -10,6 +10,9 @@ import Watch from './pages/Watch';
 import Upload from './pages/Upload';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import Playlists from './pages/Playlists';
+import LikedVideos from './pages/LikedVideos';
+import YourVideos from './pages/YourVideos';
 
 const getStoredUser = () => {
   try {
@@ -48,6 +51,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(getStoredUser());
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const location = useLocation();
+  const watermarkText = '© 2026 StreamVault';
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -109,6 +113,30 @@ function App() {
               }
             />
             <Route
+              path="/playlists"
+              element={
+                <ProtectedRoute>
+                  <Playlists />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/liked-videos"
+              element={
+                <ProtectedRoute>
+                  <LikedVideos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/your-videos"
+              element={
+                <ProtectedRoute>
+                  <YourVideos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/dashboard"
               element={
                 <AdminRoute user={currentUser}>
@@ -118,6 +146,10 @@ function App() {
             />
           </Routes>
         </main>
+      </div>
+
+      <div className="sv-watermark" aria-hidden="true">
+        {watermarkText}
       </div>
     </div>
   );

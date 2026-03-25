@@ -60,6 +60,23 @@ create table if not exists public.video_views (
   constraint video_views_viewer_check check (user_id is not null or (session_id is not null and length(trim(session_id)) > 0))
 );
 
+create table if not exists public.playlists (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+create table if not exists public.playlist_videos (
+  id uuid primary key default gen_random_uuid(),
+  playlist_id uuid not null references public.playlists(id) on delete cascade,
+  video_id uuid not null references public.videos(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (playlist_id, video_id)
+);
+
 create index if not exists idx_videos_uploaded_by on public.videos(uploaded_by);
 create index if not exists idx_videos_category on public.videos(category);
 create index if not exists idx_videos_created_at on public.videos(created_at desc);
@@ -70,6 +87,8 @@ create index if not exists idx_video_likes_video on public.video_likes(video_id)
 create index if not exists idx_video_views_video on public.video_views(video_id);
 create unique index if not exists idx_video_views_video_user_unique on public.video_views(video_id, user_id) where user_id is not null;
 create unique index if not exists idx_video_views_video_session_unique on public.video_views(video_id, session_id) where session_id is not null;
+create index if not exists idx_playlists_user_created on public.playlists(user_id, created_at desc);
+create index if not exists idx_playlist_videos_playlist_created on public.playlist_videos(playlist_id, created_at desc);
 
 alter table public.users enable row level security;
 alter table public.videos enable row level security;
@@ -77,6 +96,8 @@ alter table public.comments enable row level security;
 alter table public.watch_history enable row level security;
 alter table public.video_likes enable row level security;
 alter table public.video_views enable row level security;
+alter table public.playlists enable row level security;
+alter table public.playlist_videos enable row level security;
 
 drop policy if exists "users_select_own" on public.users;
 create policy "users_select_own" on public.users
@@ -148,4 +169,47 @@ for insert with check (
   (auth.uid() = user_id)
   or
   (auth.uid() is null and user_id is null and session_id is not null)
+);
+
+drop policy if exists "playlists_select_own" on public.playlists;
+create policy "playlists_select_own" on public.playlists
+for select using (auth.uid() = user_id);
+
+drop policy if exists "playlists_insert_own" on public.playlists;
+create policy "playlists_insert_own" on public.playlists
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists "playlists_update_own" on public.playlists;
+create policy "playlists_update_own" on public.playlists
+for update using (auth.uid() = user_id);
+
+drop policy if exists "playlists_delete_own" on public.playlists;
+create policy "playlists_delete_own" on public.playlists
+for delete using (auth.uid() = user_id);
+
+drop policy if exists "playlist_videos_select_owner" on public.playlist_videos;
+create policy "playlist_videos_select_owner" on public.playlist_videos
+for select using (
+  exists (
+    select 1 from public.playlists p
+    where p.id = playlist_videos.playlist_id and p.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "playlist_videos_insert_owner" on public.playlist_videos;
+create policy "playlist_videos_insert_owner" on public.playlist_videos
+for insert with check (
+  exists (
+    select 1 from public.playlists p
+    where p.id = playlist_videos.playlist_id and p.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "playlist_videos_delete_owner" on public.playlist_videos;
+create policy "playlist_videos_delete_owner" on public.playlist_videos
+for delete using (
+  exists (
+    select 1 from public.playlists p
+    where p.id = playlist_videos.playlist_id and p.user_id = auth.uid()
+  )
 );

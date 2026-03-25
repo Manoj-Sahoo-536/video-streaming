@@ -66,6 +66,47 @@ function Sidebar({ user }) {
         </Link>
       ))}
 
+      {/* You */}
+      {token && (
+        <>
+          <div className="sv-sidebar-divider" role="separator" />
+          <span className="sv-sidebar-section-title">You</span>
+
+          <Link
+            to="/playlists"
+            id="sidebar-playlists"
+            className={`sv-sidebar-item${isActive('/playlists') ? ' active' : ''}`}
+            aria-label="Playlists"
+            aria-current={isActive('/playlists') ? 'page' : undefined}
+          >
+            <span className="sv-sidebar-icon" aria-hidden="true">📂</span>
+            <span>Playlists</span>
+          </Link>
+
+          <Link
+            to="/liked-videos"
+            id="sidebar-liked-videos"
+            className={`sv-sidebar-item${isActive('/liked-videos') ? ' active' : ''}`}
+            aria-label="Liked videos"
+            aria-current={isActive('/liked-videos') ? 'page' : undefined}
+          >
+            <span className="sv-sidebar-icon" aria-hidden="true">👍</span>
+            <span>Liked videos</span>
+          </Link>
+
+          <Link
+            to="/your-videos"
+            id="sidebar-your-videos"
+            className={`sv-sidebar-item${isActive('/your-videos') ? ' active' : ''}`}
+            aria-label="Your videos"
+            aria-current={isActive('/your-videos') ? 'page' : undefined}
+          >
+            <span className="sv-sidebar-icon" aria-hidden="true">🎥</span>
+            <span>Your videos</span>
+          </Link>
+        </>
+      )}
+
       {/* Admin */}
       {normalizedRole === 'admin' && (
         <>

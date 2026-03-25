@@ -104,6 +104,19 @@ body {
   transition: margin-left var(--transition-base);
 }
 
+.sv-watermark {
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  z-index: 900;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.65;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.2px;
+}
+
 /* =========================================
    NAVBAR
    ========================================= */

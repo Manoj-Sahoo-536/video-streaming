@@ -22,6 +22,14 @@ function Watch() {
   const [likes, setLikes] = useState(0);
   const [likeLoading, setLikeLoading] = useState(false);
   const [likeError, setLikeError] = useState('');
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [playlists, setPlaylists] = useState([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState('');
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistSaving, setPlaylistSaving] = useState(false);
+  const [playlistError, setPlaylistError] = useState('');
+  const [playlistSuccess, setPlaylistSuccess] = useState('');
   const [descExpanded, setDescExpanded] = useState(false);
   const [relatedVideos, setRelatedVideos] = useState([]);
   const viewTrackedRef = useRef(false);
@@ -163,6 +171,73 @@ function Watch() {
     }
   };
 
+  const openPlaylistModal = async () => {
+    if (!token) return;
+    setPlaylistOpen(true);
+    setPlaylistLoading(true);
+    setPlaylistError('');
+    setPlaylistSuccess('');
+
+    try {
+      const { data } = await api.get('/playlists');
+      const playlistItems = Array.isArray(data) ? data : [];
+      setPlaylists(playlistItems);
+      setSelectedPlaylistId(playlistItems[0]?._id || '');
+    } catch (error) {
+      setPlaylistError(error?.response?.data?.message || 'Failed to load playlists.');
+      setPlaylists([]);
+      setSelectedPlaylistId('');
+    } finally {
+      setPlaylistLoading(false);
+    }
+  };
+
+  const createPlaylist = async () => {
+    const name = newPlaylistName.trim();
+    if (!name) {
+      setPlaylistError('Playlist name is required.');
+      return;
+    }
+
+    setPlaylistSaving(true);
+    setPlaylistError('');
+    setPlaylistSuccess('');
+
+    try {
+      const { data } = await api.post('/playlists', { name });
+      const created = data;
+      const updated = [created, ...playlists];
+      setPlaylists(updated);
+      setSelectedPlaylistId(created?._id || '');
+      setNewPlaylistName('');
+      setPlaylistSuccess('Playlist created. Now click Add to save this video.');
+    } catch (error) {
+      setPlaylistError(error?.response?.data?.message || 'Failed to create playlist.');
+    } finally {
+      setPlaylistSaving(false);
+    }
+  };
+
+  const addVideoToPlaylist = async () => {
+    if (!selectedPlaylistId) {
+      setPlaylistError('Please select a playlist.');
+      return;
+    }
+
+    setPlaylistSaving(true);
+    setPlaylistError('');
+    setPlaylistSuccess('');
+
+    try {
+      const { data } = await api.post(`/playlists/${selectedPlaylistId}/videos`, { videoId: id });
+      setPlaylistSuccess(data?.message || 'Video added to playlist.');
+    } catch (error) {
+      setPlaylistError(error?.response?.data?.message || 'Failed to add video to playlist.');
+    } finally {
+      setPlaylistSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading-center" role="status" aria-live="polite">
@@ -255,6 +330,17 @@ function Watch() {
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
                   <span>Share</span>
+                </button>
+                <button
+                  id="playlist-btn"
+                  className="watch-action-pill"
+                  onClick={openPlaylistModal}
+                  aria-label="Add to playlist"
+                  disabled={!token}
+                  title={!token ? 'Login to manage playlists' : ''}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h14"></path><path d="M3 12h14"></path><path d="M3 18h10"></path><path d="M17 15v6"></path><path d="M14 18h6"></path></svg>
+                  <span>Add to Playlist</span>
                 </button>
               </div>
             </div>
@@ -388,6 +474,111 @@ function Watch() {
           )}
         </aside>
       </div>
+
+      {playlistOpen && (
+        <div
+          className="profile-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="playlist-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setPlaylistOpen(false);
+            }
+          }}
+        >
+          <div className="profile-modal" style={{ maxWidth: 520 }}>
+            <div className="profile-modal-header">
+              <h2 id="playlist-modal-title" className="profile-modal-title">Save to Playlist</h2>
+              <button
+                className="profile-modal-close"
+                onClick={() => setPlaylistOpen(false)}
+                aria-label="Close playlist dialog"
+              >
+                ✕
+              </button>
+            </div>
+
+            {playlistLoading ? (
+              <div className="loading-center" role="status" aria-live="polite" style={{ minHeight: 120 }}>
+                <div className="sv-spinner" aria-hidden="true" />
+                <p className="loading-text">Loading playlists...</p>
+              </div>
+            ) : (
+              <>
+                <div className="profile-form-group">
+                  <label className="profile-form-label" htmlFor="playlist-select">Choose Playlist</label>
+                  <select
+                    id="playlist-select"
+                    className="profile-form-input profile-form-select"
+                    value={selectedPlaylistId}
+                    onChange={(e) => setSelectedPlaylistId(e.target.value)}
+                  >
+                    <option value="">Select playlist</option>
+                    {playlists.map((playlist) => (
+                      <option key={playlist._id} value={playlist._id} style={{ background: '#16161f' }}>
+                        {playlist.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="profile-form-group">
+                  <label className="profile-form-label" htmlFor="new-playlist-name">Create New Playlist</label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <input
+                      id="new-playlist-name"
+                      className="profile-form-input"
+                      value={newPlaylistName}
+                      onChange={(e) => setNewPlaylistName(e.target.value)}
+                      placeholder="e.g. Study, Favorites"
+                      maxLength={100}
+                    />
+                    <button
+                      type="button"
+                      className="sv-btn sv-btn-ghost"
+                      onClick={createPlaylist}
+                      disabled={playlistSaving}
+                    >
+                      Create
+                    </button>
+                  </div>
+                </div>
+
+                {playlistError && (
+                  <div className="sv-alert sv-alert-danger" role="alert" style={{ marginBottom: 10 }}>
+                    <span aria-hidden="true">❌</span> {playlistError}
+                  </div>
+                )}
+
+                {playlistSuccess && (
+                  <div className="sv-alert sv-alert-success" role="status" style={{ marginBottom: 10 }}>
+                    <span aria-hidden="true">✅</span> {playlistSuccess}
+                  </div>
+                )}
+
+                <div className="profile-modal-actions">
+                  <button
+                    type="button"
+                    className="sv-btn sv-btn-ghost"
+                    onClick={() => setPlaylistOpen(false)}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="sv-btn sv-btn-primary"
+                    onClick={addVideoToPlaylist}
+                    disabled={playlistSaving || !selectedPlaylistId}
+                  >
+                    {playlistSaving ? 'Saving...' : 'Add'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -242,6 +242,29 @@ const getUserVideos = async (req, res) => {
   }
 };
 
+const getLikedVideos = async (req, res) => {
+  try {
+    const { data: rows, error } = await supabaseAdminClient
+      .from('video_likes')
+      .select('created_at, videos:video_id(*, users:uploaded_by(name))')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    const likedVideos = (rows || [])
+      .map((item) => item.videos)
+      .filter(Boolean)
+      .map(mapVideo);
+
+    return res.status(200).json(likedVideos);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 const deleteVideo = async (req, res) => {
   try {
     const { data: video, error: readError } = await supabaseAdminClient
@@ -668,6 +691,7 @@ module.exports = {
   getVideoById,
   updateVideo,
   getUserVideos,
+  getLikedVideos,
   deleteVideo,
   streamVideo,
   trackVideoView,

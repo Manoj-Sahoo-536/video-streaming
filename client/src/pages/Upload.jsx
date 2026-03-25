@@ -24,6 +24,19 @@ function Upload() {
   const fileInputRef = useRef(null);
   const thumbInputRef = useRef(null);
 
+  const isPlayableVideoUrl = (url) => {
+    const value = String(url || '').trim().toLowerCase();
+    if (!value) return false;
+
+    if (/\.(mp4|webm|ogg|mov|m3u8)(\?|#|$)/i.test(value)) return true;
+    if (value.includes('youtube.com') || value.includes('youtu.be')) return true;
+    if (value.includes('vimeo.com')) return true;
+    if (value.includes('drive.google.com')) return true;
+    if (value.includes('dropbox.com') || value.includes('dropboxusercontent.com')) return true;
+
+    return false;
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
@@ -40,6 +53,11 @@ function Upload() {
 
     if (!videoFile && !form.videoUrl.trim()) {
       setError('Please select a video file or provide a video URL.');
+      return;
+    }
+
+    if (!videoFile && form.videoUrl.trim() && !isPlayableVideoUrl(form.videoUrl.trim())) {
+      setError('Unsupported video URL. Use direct media links (.mp4/.webm/.m3u8) or YouTube/Vimeo/Google Drive/Dropbox links.');
       return;
     }
 

@@ -6,6 +6,7 @@ const {
   getVideoById,
   updateVideo,
   getUserVideos,
+  getLikedVideos,
   deleteVideo,
   streamVideo,
   trackVideoView,
@@ -39,6 +40,7 @@ router.post(
 
 // Fixed: Put /my-videos BEFORE /:id so it's not caught as an invalid UUID
 router.get('/my-videos', authMiddleware, getUserVideos);
+router.get('/liked', authMiddleware, getLikedVideos);
 router.get('/:id/like-status', authMiddleware, getVideoLikeStatus);
 
 router.get('/', getVideos);
