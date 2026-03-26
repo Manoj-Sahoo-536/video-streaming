@@ -9,7 +9,7 @@ const adminItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
 ];
 
-function Sidebar({ user }) {
+function Sidebar({ user, mobileOpen }) {
   const location = useLocation();
 
   let activeUser = user;
@@ -26,7 +26,7 @@ function Sidebar({ user }) {
   };
 
   return (
-    <aside className="sv-sidebar" role="complementary" aria-label="Sidebar navigation">
+    <aside className={`sv-sidebar${mobileOpen ? ' mobile-open' : ''}`} role="complementary" aria-label="Sidebar navigation">
       {/* Main Nav */}
       <span className="sv-sidebar-section-title">Navigation</span>
 

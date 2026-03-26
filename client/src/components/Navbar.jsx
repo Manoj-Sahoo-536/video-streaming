@@ -6,6 +6,7 @@ function Navbar({ onToggleSidebar }) {
   const location = useLocation();
   const token = localStorage.getItem('token');
   const [navSearch, setNavSearch] = useState('');
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   let user = {};
   try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch (_) {}
@@ -77,7 +78,7 @@ function Navbar({ onToggleSidebar }) {
       </div>
 
       {/* Search */}
-      <form className="sv-search-wrapper" onSubmit={handleNavSearch} role="search">
+      <form className={`sv-search-wrapper${mobileSearchOpen ? ' mobile-visible' : ''}`} onSubmit={handleNavSearch} role="search">
         <span className="sv-search-icon" aria-hidden="true">🔍</span>
         <input
           id="navbar-search"
@@ -92,39 +93,66 @@ function Navbar({ onToggleSidebar }) {
 
       {/* Actions */}
       <div className="sv-navbar-actions">
-        {token && (
-          <Link
-            id="nav-upload-btn"
-            className="sv-btn sv-btn-primary"
-            to="/upload"
-            aria-label="Upload video"
-          >
-            <span aria-hidden="true">⬆</span> Upload
-          </Link>
-        )}
+        {/* Search toggle — icon only on mobile */}
+        <button
+          className="sv-icon-btn nav-search-toggle"
+          onClick={() => setMobileSearchOpen((p) => !p)}
+          aria-label="Toggle search"
+        >
+          🔍
+        </button>
 
-        {token ? (
+        {token && (
           <>
+            {/* Upload: full button on desktop, icon-only on mobile */}
+            <Link
+              id="nav-upload-btn"
+              className="sv-btn sv-btn-primary nav-upload-full"
+              to="/upload"
+              aria-label="Upload video"
+            >
+              ⬆ Upload
+            </Link>
+            <Link
+              className="sv-icon-btn nav-upload-icon"
+              to="/upload"
+              aria-label="Upload video"
+            >
+              ⬆
+            </Link>
+
+            {/* Avatar */}
             <Link
               to="/profile"
               className="sv-avatar"
               title={user?.name || 'Profile'}
-              aria-label={`User avatar for ${user?.name || 'Profile'}`}
-              role="link"
+              aria-label={`Profile`}
               style={{ textDecoration: 'none' }}
             >
               {initials}
             </Link>
+
+            {/* Logout: text on desktop, icon on mobile */}
             <button
               id="nav-logout-btn"
-              className="sv-btn sv-btn-danger"
+              className="sv-btn sv-btn-danger nav-logout-full"
               onClick={logout}
               aria-label="Logout"
             >
               Logout
             </button>
+            <button
+              className="sv-icon-btn nav-logout-icon"
+              onClick={logout}
+              aria-label="Logout"
+              title="Logout"
+            >
+              ⏻
+            </button>
           </>
-        ) : (
+        )}
+
+        {!token && (
           <>
             <Link
               id="nav-login-btn"
@@ -136,11 +164,19 @@ function Navbar({ onToggleSidebar }) {
             </Link>
             <Link
               id="nav-register-btn"
-              className="sv-btn sv-btn-primary"
+              className="sv-btn sv-btn-primary nav-register-full"
               to="/register"
               aria-label="Register"
             >
               Register
+            </Link>
+            <Link
+              className="sv-icon-btn nav-register-icon"
+              to="/register"
+              aria-label="Register"
+              title="Register"
+            >
+              ✨
             </Link>
           </>
         )}

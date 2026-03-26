@@ -50,8 +50,13 @@ function AdminRoute({ children, user }) {
 function App() {
   const [currentUser, setCurrentUser] = useState(getStoredUser());
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const location = useLocation();
   const watermarkText = '© 2026 StreamVault';
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -77,15 +82,27 @@ function App() {
     hydrateProfile();
   }, [location.pathname]);
 
+  const handleToggleSidebar = () => {
+    if (window.innerWidth <= 900) setMobileSidebarOpen((p) => !p);
+    else setSidebarMinimized((p) => !p);
+  };
+
   // Auth pages should not show the sidebar
   const isAuthPage = ['/login', '/register'].includes(location.pathname);
 
   return (
     <div className={`app-shell ${sidebarMinimized ? 'sidebar-minimized' : ''}`}>
-      <Navbar onToggleSidebar={() => setSidebarMinimized((p) => !p)} />
+      <Navbar onToggleSidebar={handleToggleSidebar} />
 
       <div className="main-layout">
-        {!isAuthPage && <Sidebar user={currentUser} />}
+        {!isAuthPage && (
+          <>
+            {mobileSidebarOpen && (
+              <div className="sidebar-overlay" onClick={() => setMobileSidebarOpen(false)} aria-hidden="true" />
+            )}
+            <Sidebar user={currentUser} mobileOpen={mobileSidebarOpen} />
+          </>
+        )}
 
         <main
           className="content-area"

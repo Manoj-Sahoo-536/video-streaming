@@ -29,11 +29,16 @@ const register = async (req, res) => {
       return res.status(500).json({ message: getSupabaseConfigError() });
     }
 
-    const { name, password } = req.body;
-    const email = String(req.body.email || '').trim().toLowerCase();
+    const name = String(req.body.name || '').trim().slice(0, 100);
+    const password = req.body.password;
+    const email = String(req.body.email || '').trim().toLowerCase().slice(0, 254);
 
-    if (!String(name || '').trim() || !email || !password) {
+    if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
 
     const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
@@ -67,7 +72,7 @@ const register = async (req, res) => {
     const { error: profileUpsertError } = await supabaseAdminClient.from('users').upsert(
       {
         id: signUpData.user.id,
-        name: String(name).trim(),
+        name: name,
         email,
         role: 'user'
       },

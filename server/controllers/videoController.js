@@ -490,7 +490,8 @@ const getRecommendedVideos = async (req, res) => {
 
 const postComment = async (req, res) => {
   try {
-    const { videoId, comment } = req.body;
+    const { videoId } = req.body;
+    const comment = String(req.body.comment || '').trim().slice(0, 1000);
 
     if (!videoId || !comment) {
       return res.status(400).json({ message: 'videoId and comment are required' });
