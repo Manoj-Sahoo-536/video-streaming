@@ -76,6 +76,7 @@ function Upload() {
 
     try {
       await api.post('/videos/upload', payload, {
+        timeout: 300000, // 5 minutes for video uploads
         onUploadProgress: (e) => {
           const percent = Math.round((e.loaded * 85) / e.total);
           setProgress(10 + percent);
